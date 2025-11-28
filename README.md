@@ -97,6 +97,10 @@ let app = Router::new()
         rate_limiter,
         rate_limit_middleware,
     ))
+    /* Your application middleware should be placed in between these layers.
+     * This allows the security_context_middleware to handle the post processing,
+     * refunding tokens, or docking extra tokens after requests have been handled.
+     */
     .layer(axum::middleware::from_fn(security_context_middleware));
 ```
 
@@ -138,9 +142,9 @@ let config = RateLimitConfig::new(
     50,                              // Max requests per minute
     Duration::from_secs(15 * 60),    // Block duration when limit exceeded
 )
-.with_grace_period(2)                // Grace period in seconds (default: 2)
-.with_cache_refund_ratio(0.9)        // Refund 90% for cache hits (default: 0.9)
-.with_error_penalty(1.0);            // Extra tokens for errors (default: 1.0)
+.with_grace_period(1)                // Grace period in seconds (default: 1)
+.with_cache_refund_ratio(0.5)        // Refund 90% for cache hits (default: 0.5)
+.with_error_penalty(2.0);            // Extra tokens for errors (default: 2.0)
 ```
 
 Defaults:
@@ -300,6 +304,19 @@ impl ScreeningConfig {
     pub fn with_user_agent_pattern(self, pattern: &str) -> Self;
     pub fn with_user_agent_patterns(self, patterns: Vec<String>) -> Self;
 }
+```
+
+### Metrics Feature
+
+The metrics feature enables the metrics endpoint and the metrics logging methods. These are used for load testing with prometheus logging outside
+of production environments. They probably could be used in production environments but you would want to secure the endpoint or change the implementation to use a flat file for metrics rather than an api endpoint. The Cargo.toml looks like this for my setup.
+```toml
+[features]
+default = []
+loadtest = ["basic-axum-rate-limit/metrics"]
+
+[dependencies]
+basic-axum-rate-limit = "0.1.1"
 ```
 
 ### Example Configuration
