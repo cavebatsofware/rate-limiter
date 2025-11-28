@@ -97,6 +97,10 @@ let app = Router::new()
         rate_limiter,
         rate_limit_middleware,
     ))
+    /* Your application middleware should be placed in between these layers.
+     * This allows the security_context_middleware to handle the post processing,
+     * refunding tokens, or docking extra tokens after requests have been handled.
+     */
     .layer(axum::middleware::from_fn(security_context_middleware));
 ```
 
@@ -138,9 +142,9 @@ let config = RateLimitConfig::new(
     50,                              // Max requests per minute
     Duration::from_secs(15 * 60),    // Block duration when limit exceeded
 )
-.with_grace_period(2)                // Grace period in seconds (default: 2)
-.with_cache_refund_ratio(0.9)        // Refund 90% for cache hits (default: 0.9)
-.with_error_penalty(1.0);            // Extra tokens for errors (default: 1.0)
+.with_grace_period(1)                // Grace period in seconds (default: 1)
+.with_cache_refund_ratio(0.5)        // Refund 90% for cache hits (default: 0.5)
+.with_error_penalty(2.0);            // Extra tokens for errors (default: 2.0)
 ```
 
 Defaults:

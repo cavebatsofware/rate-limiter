@@ -1,9 +1,9 @@
 [package]
 name = "basic-axum-rate-limit"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 authors = ["Grant DeFayette"]
-license-file = "LICENSE.md"
+license = "LGPL-3.0-or-later"
 description = "Simple rate limiting middleware for Axum with callback-based extensibility"
 homepage = "https://grant.cavebatsofware.com/"
 readme = "README.md"
