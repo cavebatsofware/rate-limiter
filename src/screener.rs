@@ -11,51 +11,8 @@ pub struct ScreeningConfig {
 impl Default for ScreeningConfig {
     fn default() -> Self {
         Self {
-            path_patterns: vec![
-                // PHP attacks
-                r"\.php\d?$".to_string(),
-                r"/vendor/".to_string(),
-                r"/phpunit/".to_string(),
-                r"eval-stdin".to_string(),
-                // .NET attacks
-                r"\.aspx?$".to_string(),
-                r"\.axd$".to_string(),
-                r"/Telerik\.".to_string(),
-                // Java attacks
-                r"\.jsp$".to_string(),
-                r"/jasperserver".to_string(),
-                // Git/config exposure
-                r"/\.git/".to_string(),
-                r"/\.env".to_string(),
-                r"/\.aws/".to_string(),
-                r"/\.ssh/".to_string(),
-                // Windows/RDP
-                r"/RDWeb/".to_string(),
-                // Router/device admin panels
-                r"/webfig/".to_string(),
-                r"/ssi\.cgi".to_string(),
-                r"\.cc$".to_string(),
-                // Monitoring tools
-                r"/zabbix/".to_string(),
-                // WordPress
-                r"/wp-admin".to_string(),
-                r"/wp-content".to_string(),
-                r"/wp-includes".to_string(),
-                r"/xmlrpc\.php".to_string(),
-            ],
-            user_agent_patterns: vec![
-                "libredtail-http".to_string(),
-                "zgrab".to_string(),
-                "masscan".to_string(),
-                "nuclei".to_string(),
-                "sqlmap".to_string(),
-                "nikto".to_string(),
-                "nmap".to_string(),
-                "dirbuster".to_string(),
-                "gobuster".to_string(),
-                "wfuzz".to_string(),
-                "ffuf".to_string(),
-            ],
+            path_patterns: Vec::new(),
+            user_agent_patterns: Vec::new(),
         }
     }
 }
@@ -175,10 +132,19 @@ impl Clone for RequestScreener {
 mod tests {
     use super::*;
 
+    fn test_config() -> ScreeningConfig {
+        ScreeningConfig::new()
+            .with_path_patterns(vec![
+                r"\.php\d?$".to_string(),
+                r"/vendor/".to_string(),
+                r"/\.git/".to_string(),
+            ])
+            .with_user_agent_patterns(vec!["libredtail-http".to_string()])
+    }
+
     #[test]
-    fn test_default_config_catches_php() {
-        let config = ScreeningConfig::default();
-        let screener = RequestScreener::new(&config).unwrap();
+    fn test_catches_php() {
+        let screener = RequestScreener::new(&test_config()).unwrap();
 
         let result = screener.check(
             "/vendor/phpunit/phpunit/src/Util/PHP/eval-stdin.php",
@@ -188,18 +154,16 @@ mod tests {
     }
 
     #[test]
-    fn test_default_config_catches_git() {
-        let config = ScreeningConfig::default();
-        let screener = RequestScreener::new(&config).unwrap();
+    fn test_catches_git() {
+        let screener = RequestScreener::new(&test_config()).unwrap();
 
         let result = screener.check("/.git/config", "Mozilla/5.0");
         assert!(result.is_some());
     }
 
     #[test]
-    fn test_default_config_catches_malicious_user_agent() {
-        let config = ScreeningConfig::default();
-        let screener = RequestScreener::new(&config).unwrap();
+    fn test_catches_malicious_user_agent() {
+        let screener = RequestScreener::new(&test_config()).unwrap();
 
         let result = screener.check("/", "libredtail-http");
         assert!(result.is_some());
@@ -207,8 +171,7 @@ mod tests {
 
     #[test]
     fn test_allows_legitimate_requests() {
-        let config = ScreeningConfig::default();
-        let screener = RequestScreener::new(&config).unwrap();
+        let screener = RequestScreener::new(&test_config()).unwrap();
 
         let result = screener.check(
             "/blog/hello-world",
@@ -219,10 +182,16 @@ mod tests {
 
     #[test]
     fn test_user_agent_case_insensitive() {
-        let config = ScreeningConfig::default();
-        let screener = RequestScreener::new(&config).unwrap();
+        let screener = RequestScreener::new(&test_config()).unwrap();
 
         let result = screener.check("/", "LIBREDTAIL-HTTP");
         assert!(result.is_some());
+    }
+
+    #[test]
+    fn test_default_config_is_empty() {
+        let config = ScreeningConfig::default();
+        assert!(config.path_patterns.is_empty());
+        assert!(config.user_agent_patterns.is_empty());
     }
 }

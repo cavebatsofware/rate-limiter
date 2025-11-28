@@ -52,7 +52,40 @@ let callbacks = MyCallbacks { db };
 let rate_limiter = RateLimiter::new(config, callbacks);
 ```
 
-### 3. Add middleware to router
+### 3. Configure request screening (optional)
+
+The screener immediately blocks requests matching malicious patterns before they consume rate limit tokens:
+
+```rust
+use basic_axum_rate_limit::{RequestScreener, ScreeningConfig};
+
+let screening_config = ScreeningConfig::new()
+    .with_path_patterns(vec![
+        // PHP attacks
+        r"\.php\d?$".to_string(),
+        r"/vendor/".to_string(),
+        // Git/config exposure
+        r"/\.git/".to_string(),
+        r"/\.env".to_string(),
+        // WordPress
+        r"/wp-admin".to_string(),
+        r"/wp-content".to_string(),
+    ])
+    .with_user_agent_patterns(vec![
+        "zgrab".to_string(),
+        "masscan".to_string(),
+        "nuclei".to_string(),
+        "sqlmap".to_string(),
+    ]);
+
+let screener = RequestScreener::new(&screening_config)
+    .expect("Failed to compile screening patterns");
+
+let rate_limiter = RateLimiter::new(config, callbacks)
+    .with_screener(screener);
+```
+
+### 4. Add middleware to router
 
 ```rust
 use axum::Router;
@@ -67,7 +100,7 @@ let app = Router::new()
     .layer(axum::middleware::from_fn(security_context_middleware));
 ```
 
-### 4. Access security context in handlers
+### 5. Access security context in handlers
 
 ```rust
 use axum::Extension;
@@ -241,6 +274,57 @@ Mixed (40 success, 10 failures):   ~45 requests/min
 ```
 
 This creates a reputation-based system where well-behaved clients get more capacity while malicious traffic is throttled more aggressively.
+
+## Request Screening
+
+The `RequestScreener` identifies obviously malicious requests (vulnerability scanners, path enumeration). Screened requests consume exactly 1 token regardless of response status, bypassing error penalties.
+
+### ScreeningConfig
+
+```rust
+pub struct ScreeningConfig {
+    /// Regex patterns that match malicious paths
+    pub path_patterns: Vec<String>,
+    /// Substrings that match malicious user agents (case-insensitive)
+    pub user_agent_patterns: Vec<String>,
+}
+```
+
+### Configuration Methods
+
+```rust
+impl ScreeningConfig {
+    pub fn new() -> Self;
+    pub fn with_path_pattern(self, pattern: &str) -> Self;
+    pub fn with_path_patterns(self, patterns: Vec<String>) -> Self;
+    pub fn with_user_agent_pattern(self, pattern: &str) -> Self;
+    pub fn with_user_agent_patterns(self, patterns: Vec<String>) -> Self;
+}
+```
+
+### Example Configuration
+
+```rust
+let config = ScreeningConfig::new()
+    .with_path_patterns(vec![
+        r"\.php\d?$".to_string(),   // PHP files
+        r"/\.git/".to_string(),      // Git exposure
+        r"/\.env".to_string(),       // Environment files
+        r"/wp-admin".to_string(),    // WordPress admin
+    ])
+    .with_user_agent_patterns(vec![
+        "zgrab".to_string(),
+        "nuclei".to_string(),
+        "sqlmap".to_string(),
+    ]);
+```
+
+### Behavior
+
+- **Path patterns**: Regex patterns matched against the request path
+- **User agent patterns**: Case-insensitive substring matching
+- **Screened requests**: Consume exactly 1 token (error penalties do not apply)
+- **No default patterns**: You must explicitly configure patterns for your application
 
 ## License
 
