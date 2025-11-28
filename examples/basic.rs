@@ -64,16 +64,12 @@ async fn main() {
             r"/\.git/".to_string(),
             r"/\.env".to_string(),
         ])
-        .with_user_agent_patterns(vec![
-            "zgrab".to_string(),
-            "nuclei".to_string(),
-        ]);
+        .with_user_agent_patterns(vec!["zgrab".to_string(), "nuclei".to_string()]);
 
-    let screener = RequestScreener::new(&screening_config)
-        .expect("Failed to compile screening patterns");
+    let screener =
+        RequestScreener::new(&screening_config).expect("Failed to compile screening patterns");
 
-    let rate_limiter = RateLimiter::new(config, SimpleCallbacks)
-        .with_screener(screener);
+    let rate_limiter = RateLimiter::new(config, SimpleCallbacks).with_screener(screener);
 
     let app = Router::new()
         .route("/", get(handler))
