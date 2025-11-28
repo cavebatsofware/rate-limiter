@@ -1,6 +1,6 @@
 # basic-axum-rate-limit
 
-Rate limiting middleware for Axum using a callback pattern for database operations.
+Rate limiting middleware for Axum using a callback pattern for (optional) database operations.
 
 ## Usage
 

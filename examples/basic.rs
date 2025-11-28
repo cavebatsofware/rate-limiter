@@ -1,7 +1,7 @@
 use axum::{extract::Extension, response::Json, routing::get, Router};
 use basic_axum_rate_limit::{
     rate_limit_middleware, security_context_middleware, ActionChecker, OnBlocked, RateLimitConfig,
-    RateLimiter, SecurityContext,
+    RateLimiter, RequestScreener, ScreeningConfig, SecurityContext,
 };
 use std::time::Duration;
 
@@ -37,13 +37,26 @@ async fn handler(Extension(ctx): Extension<SecurityContext>) -> Json<serde_json:
 
 #[tokio::main]
 async fn main() {
-    let config = RateLimitConfig::builder()
-        .max_requests(10)
-        .time_window(Duration::from_secs(60))
-        .cleanup_interval(Duration::from_secs(300))
-        .build();
+    // Configure rate limiting: 10 requests per minute, 15 minute block duration
+    let config = RateLimitConfig::new(10, Duration::from_secs(15 * 60));
 
-    let rate_limiter = RateLimiter::new(config, SimpleCallbacks);
+    // Configure request screening to block common attack patterns
+    let screening_config = ScreeningConfig::new()
+        .with_path_patterns(vec![
+            r"\.php\d?$".to_string(),
+            r"/\.git/".to_string(),
+            r"/\.env".to_string(),
+        ])
+        .with_user_agent_patterns(vec![
+            "zgrab".to_string(),
+            "nuclei".to_string(),
+        ]);
+
+    let screener = RequestScreener::new(&screening_config)
+        .expect("Failed to compile screening patterns");
+
+    let rate_limiter = RateLimiter::new(config, SimpleCallbacks)
+        .with_screener(screener);
 
     let app = Router::new()
         .route("/", get(handler))
