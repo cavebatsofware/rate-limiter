@@ -92,7 +92,7 @@ This crate uses a token bucket algorithm for efficient rate limiting:
 
 To handle legitimate bursts (e.g., loading a page with many assets), new IP addresses get a **grace period**:
 
-- Default: **2 seconds** after first request
+- Default: **1 second** after first request
 - During grace period: requests don't consume tokens
 - After grace period: normal rate limiting applies
 
@@ -114,7 +114,7 @@ Defaults:
 - `rate_limit_per_minute`: 50
 - `block_duration`: 15 minutes (900 seconds)
 - `grace_period_seconds`: 1
-- `cache_refund_ratio`: 0.9 (90% refund for 304 responses)
+- `cache_refund_ratio`: 0.5 (50% refund for 304 responses)
 - `error_penalty_tokens`: 2.0 (additional token cost for 4xx/5xx)
 
 ### Configuration Methods
@@ -179,31 +179,14 @@ pub trait ActionChecker: Send + Sync {
 
 ### Per-IP Rate Limiting
 
-Rate limits are applied per IP address globally, not per endpoint. If an IP makes 30 requests to different endpoints, they will be rate limited.
+Rate limits are applied per IP address globally, not per endpoint. If an IP makes 30 (or whatever the limit is) requests to different endpoints, they will be rate limited. There is support for custom per-action limiting with callbacks but that is a different than the token bucket limiting.
 
 ### Burst Handling
 
 The token bucket algorithm naturally allows bursts:
-- Full bucket (30 tokens) allows 30 rapid requests
+- Full bucket allows rapid requests
 - After grace period, tokens refill at 0.5/second (30/minute)
 - Example: Use all 30 tokens → wait 60 seconds → have 30 tokens again
-
-### Grace Period Example
-
-```
-Time    Event                           Tokens  Action
-----    -----                           ------  ------
-0.0s    First request from new IP       30.0    ALLOW (grace period)
-0.1s    Request 2                       30.0    ALLOW (grace period)
-0.2s    Request 3                       30.0    ALLOW (grace period)
-...     Requests 4-25                   30.0    ALLOW (grace period)
-1.5s    Request 26                      30.0    ALLOW (grace period)
-2.1s    Request 27 (grace ended)        29.0    ALLOW (consumed 1 token)
-2.2s    Request 28                      28.0    ALLOW (consumed 1 token)
-...     
-4.0s    Request 58                      0.5     ALLOW (consumed 1 token, now at -0.5)
-4.1s    Request 59                      0.0     BLOCKED (no tokens)
-```
 
 ### Cache Response Handling
 
@@ -213,18 +196,14 @@ HTTP cache validation requests (304 Not Modified) consume reduced tokens:
 1. Request arrives → consumes 1.0 token upfront
 2. Handler executes and returns response
 3. Middleware checks response status code
-4. If `304 Not Modified` → refunds 0.9 tokens (default)
+4. If `304 Not Modified` → refunds 0.5 tokens (default)
 5. **Effective cost: 0.1 tokens** (10x more cache requests allowed)
-
-**Security design:**
-- Uses **response status code**, not request headers
-- Prevents abuse from spoofed `If-None-Match` headers
-- Malicious clients cannot fake cache hits to avoid rate limiting
+6. Prevents abuse from spoofed `If-None-Match` headers
 
 **Example:**
 ```
 Full requests:  30 requests/minute (1.0 token each)
-Cache requests: 300 requests/minute (0.1 token effective cost)
+Cache requests: 60 requests/minute (0.5 token effective cost)
 ```
 
 This naturally handles browser cache validation without creating security holes.
@@ -241,14 +220,14 @@ Failed requests (4xx and 5xx status codes) consume additional tokens to penalize
 5. **Effective cost: 2.0 tokens** (2x normal cost)
 
 **Why this helps:**
-- **Legitimate users**: Rarely hit errors, benefit from increased bucket size (50 tokens)
+- **Legitimate users**: Rarely hit errors
 - **Scanners/bots**: Generate many 404s during path enumeration, get rate limited 2x faster
-- **Server errors**: Also penalized, creating visibility into problems
+- **Server errors**: Also penalized, creating visibility into problems. If a user is generating lots of 500s that is something I'd like to shutdown. A better strategy for handling the block/backoff would be good for some cases but that isn't a concern for my application so I didn't worry about it.
 
 **Example token costs:**
 ```
 200 OK:           1.0 token
-304 Not Modified: 0.1 token (with refund)
+304 Not Modified: 0.5 token (with refund)
 404 Not Found:    2.0 tokens (1.0 + 1.0 penalty)
 403 Forbidden:    2.0 tokens (1.0 + 1.0 penalty)
 500 Server Error: 2.0 tokens (1.0 + 1.0 penalty)
