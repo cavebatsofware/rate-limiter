@@ -15,13 +15,13 @@
  *  along with basic-axum-rate-limit.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use regex::Regex;
+use regex::RegexSet;
 
 #[derive(Debug, Clone)]
 pub struct ScreeningConfig {
     /// Regex patterns that match malicious paths
     pub path_patterns: Vec<String>,
-    /// Substrings that match malicious user agents (case-insensitive)
+    /// Regex patterns that match malicious user agents (case-insensitive)
     pub user_agent_patterns: Vec<String>,
 }
 
@@ -87,61 +87,51 @@ impl std::fmt::Display for ScreeningReason {
     }
 }
 
+#[derive(Clone)]
 pub struct RequestScreener {
-    path_patterns: Vec<(String, Regex)>,
+    path_regex_set: RegexSet,
+    path_patterns: Vec<String>,
+    user_agent_regex_set: RegexSet,
     user_agent_patterns: Vec<String>,
 }
 
 impl RequestScreener {
     pub fn new(config: &ScreeningConfig) -> Result<Self, regex::Error> {
-        let path_patterns = config
-            .path_patterns
-            .iter()
-            .map(|p| Ok((p.clone(), Regex::new(p)?)))
-            .collect::<Result<Vec<_>, regex::Error>>()?;
+        let path_regex_set = RegexSet::new(&config.path_patterns)?;
 
-        let user_agent_patterns = config
+        // Make UA patterns case-insensitive
+        let ua_regexes: Vec<String> = config
             .user_agent_patterns
             .iter()
-            .map(|p| p.to_lowercase())
+            .map(|p| format!("(?i){}", p))
             .collect();
 
+        let user_agent_regex_set = RegexSet::new(&ua_regexes)?;
+
         Ok(Self {
-            path_patterns,
-            user_agent_patterns,
+            path_regex_set,
+            path_patterns: config.path_patterns.clone(),
+            user_agent_regex_set,
+            user_agent_patterns: config.user_agent_patterns.clone(),
         })
     }
 
     pub fn check(&self, path: &str, user_agent: &str) -> Option<ScreeningResult> {
-        // Check path patterns
-        for (pattern_str, regex) in &self.path_patterns {
-            if regex.is_match(path) {
-                return Some(ScreeningResult {
-                    reason: ScreeningReason::MaliciousPath(pattern_str.clone()),
-                });
-            }
+        // Single-pass check against all path patterns
+        if let Some(idx) = self.path_regex_set.matches(path).iter().next() {
+            return Some(ScreeningResult {
+                reason: ScreeningReason::MaliciousPath(self.path_patterns[idx].clone()),
+            });
         }
 
-        // Check user agent patterns (case-insensitive substring match)
-        let user_agent_lower = user_agent.to_lowercase();
-        for pattern in &self.user_agent_patterns {
-            if user_agent_lower.contains(pattern) {
-                return Some(ScreeningResult {
-                    reason: ScreeningReason::MaliciousUserAgent(pattern.clone()),
-                });
-            }
+        // Single-pass check against all user agent patterns (no allocation)
+        if let Some(idx) = self.user_agent_regex_set.matches(user_agent).iter().next() {
+            return Some(ScreeningResult {
+                reason: ScreeningReason::MaliciousUserAgent(self.user_agent_patterns[idx].clone()),
+            });
         }
 
         None
-    }
-}
-
-impl Clone for RequestScreener {
-    fn clone(&self) -> Self {
-        Self {
-            path_patterns: self.path_patterns.clone(),
-            user_agent_patterns: self.user_agent_patterns.clone(),
-        }
     }
 }
 

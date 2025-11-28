@@ -289,10 +289,12 @@ The `RequestScreener` identifies obviously malicious requests (vulnerability sca
 pub struct ScreeningConfig {
     /// Regex patterns that match malicious paths
     pub path_patterns: Vec<String>,
-    /// Substrings that match malicious user agents (case-insensitive)
+    /// Regex patterns that match malicious user agents (case-insensitive)
     pub user_agent_patterns: Vec<String>,
 }
 ```
+
+Both pattern sets are compiled into a `RegexSet` for efficient single-pass matching. User agent patterns are automatically made case-insensitive.
 
 ### Configuration Methods
 
@@ -316,7 +318,7 @@ default = []
 loadtest = ["basic-axum-rate-limit/metrics"]
 
 [dependencies]
-basic-axum-rate-limit = "0.1.1"
+basic-axum-rate-limit = "0.2.0"
 ```
 
 ### Example Configuration
@@ -338,11 +340,11 @@ let config = ScreeningConfig::new()
 
 ### Behavior
 
-- **Path patterns**: Regex patterns matched against the request path
-- **User agent patterns**: Case-insensitive substring matching
+- **Path patterns**: Regex patterns matched against the request path via `RegexSet`
+- **User agent patterns**: Regex patterns matched case-insensitively via `RegexSet`
 - **Screened requests**: Consume exactly 1 token (error penalties do not apply)
 - **No default patterns**: You must explicitly configure patterns for your application
 
 ## License
 
-GNU General Public License v3.0 or later.
+GNU Lesser General Public License v3.0 or later.
