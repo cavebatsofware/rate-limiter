@@ -142,7 +142,7 @@ use basic_axum_rate_limit::{
 };
 
 let security_config = SecurityContextConfig::new()
-    .with_ip_extraction(IpExtractionStrategy::CloudflareConnectingIp);
+    .with_ip_extraction(IpExtractionStrategy::cloudflare());
 
 // ...
 .layer(axum::middleware::from_fn_with_state(
