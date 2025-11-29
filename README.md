@@ -100,7 +100,7 @@ use basic_axum_rate_limit::{SecurityContextConfig, IpExtractionStrategy};
 
 // Cloudflare CF-Connecting-IP header
 let config = SecurityContextConfig::new()
-    .with_ip_extraction(IpExtractionStrategy::CloudflareConnectingIp);
+    .with_ip_extraction(IpExtractionStrategy::cloudflare());
 
 // nginx with X-Real-IP
 let config = SecurityContextConfig::new()
