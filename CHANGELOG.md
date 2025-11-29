@@ -10,10 +10,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Configurable IP extraction via `IpExtractionStrategy` enum:
-  - `XForwardedFor` (default) - expects exactly one IP from trusted proxy
-  - `XRealIp` (nginx)
-  - `CloudflareConnectingIp`
-  - `custom_header("X-Custom-IP")`
+  - `ForwardedHeader` (with configurable header name and extraction logic)
+    - Convenience methods for common headers:
+      - `x_forwarded_for()` (default) - expects exactly one IP from trusted proxy
+      - `x_real_ip()` (nginx)
+      - `cloudflare()` (uses `CF-Connecting-IP`)
+      - `custom_header("X-Custom-IP")`
   - `SocketAddr` (direct connections)
 - `SecurityContextConfig` for configuring the security context middleware
 - `security_context_middleware_with_config` for custom IP extraction
