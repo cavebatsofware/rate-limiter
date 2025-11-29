@@ -1,5 +1,11 @@
 # basic-axum-rate-limit
 
+[![Cargo Check](https://github.com/cavebatsofware/rate-limiter/actions/workflows/check.yml/badge.svg)](https://github.com/cavebatsofware/rate-limiter/actions/workflows/check.yml)
+[![Cargo Format](https://github.com/cavebatsofware/rate-limiter/actions/workflows/format.yml/badge.svg)](https://github.com/cavebatsofware/rate-limiter/actions/workflows/format.yml)
+[![Lint](https://github.com/cavebatsofware/rate-limiter/actions/workflows/lint.yml/badge.svg)](https://github.com/cavebatsofware/rate-limiter/actions/workflows/lint.yml)
+[![Cargo Audit](https://github.com/cavebatsofware/rate-limiter/actions/workflows/audit.yml/badge.svg)](https://github.com/cavebatsofware/rate-limiter/actions/workflows/audit.yml)
+[![crates.io](https://img.shields.io/crates/v/basic-axum-rate-limit.svg)](https://crates.io/crates/basic-axum-rate-limit)
+
 Rate limiting middleware for Axum using a callback pattern for (optional) database operations.
 
 ## Usage
