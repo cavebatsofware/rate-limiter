@@ -85,7 +85,31 @@ let rate_limiter = RateLimiter::new(config, callbacks)
     .with_screener(screener);
 ```
 
-### 4. Add middleware to router
+### 4. Configure IP extraction (optional)
+
+By default, the middleware uses `X-Forwarded-For` and expects exactly one IP (from your trusted proxy). For other setups, configure the extraction strategy:
+
+```rust
+use basic_axum_rate_limit::{SecurityContextConfig, IpExtractionStrategy};
+
+// Cloudflare CF-Connecting-IP header
+let config = SecurityContextConfig::new()
+    .with_ip_extraction(IpExtractionStrategy::CloudflareConnectingIp);
+
+// nginx with X-Real-IP
+let config = SecurityContextConfig::new()
+    .with_ip_extraction(IpExtractionStrategy::XRealIp);
+
+// Direct connections (no proxy)
+let config = SecurityContextConfig::new()
+    .with_ip_extraction(IpExtractionStrategy::SocketAddr);
+
+// Custom header
+let config = SecurityContextConfig::new()
+    .with_ip_extraction(IpExtractionStrategy::custom_header("X-Client-IP"));
+```
+
+### 5. Add middleware to router
 
 ```rust
 use axum::Router;
@@ -104,7 +128,24 @@ let app = Router::new()
     .layer(axum::middleware::from_fn(security_context_middleware));
 ```
 
-### 5. Access security context in handlers
+For custom IP extraction strategies, use `security_context_middleware_with_config`:
+
+```rust
+use basic_axum_rate_limit::{
+    security_context_middleware_with_config, SecurityContextConfig, IpExtractionStrategy,
+};
+
+let security_config = SecurityContextConfig::new()
+    .with_ip_extraction(IpExtractionStrategy::CloudflareConnectingIp);
+
+// ...
+.layer(axum::middleware::from_fn_with_state(
+    security_config,
+    security_context_middleware_with_config,
+));
+```
+
+### 6. Access security context in handlers
 
 ```rust
 use axum::Extension;
@@ -318,7 +359,7 @@ default = []
 loadtest = ["basic-axum-rate-limit/metrics"]
 
 [dependencies]
-basic-axum-rate-limit = "0.2.0"
+basic-axum-rate-limit = "0.2.1"
 ```
 
 ### Example Configuration
