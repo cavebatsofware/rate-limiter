@@ -104,7 +104,7 @@ let config = SecurityContextConfig::new()
 
 // nginx with X-Real-IP
 let config = SecurityContextConfig::new()
-    .with_ip_extraction(IpExtractionStrategy::XRealIp);
+    .with_ip_extraction(IpExtractionStrategy::x_real_ip());
 
 // Direct connections (no proxy)
 let config = SecurityContextConfig::new()
