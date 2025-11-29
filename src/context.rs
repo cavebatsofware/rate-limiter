@@ -63,11 +63,7 @@ impl std::fmt::Display for IpExtractionError {
                 )
             }
             Self::InvalidIpAddress { header_name, value } => {
-                write!(
-                    f,
-                    "Invalid IP address in {}: '{}'",
-                    header_name, value
-                )
+                write!(f, "Invalid IP address in {}: '{}'", header_name, value)
             }
         }
     }
@@ -282,17 +278,19 @@ fn parse_forwarded_header(
     header_name: &str,
     proxy_depth: usize,
 ) -> Result<IpAddr, IpExtractionError> {
-    let header_value = headers
-        .get(header_name)
-        .ok_or_else(|| IpExtractionError::MissingHeader {
-            header_name: header_name.to_string(),
-        })?;
+    let header_value =
+        headers
+            .get(header_name)
+            .ok_or_else(|| IpExtractionError::MissingHeader {
+                header_name: header_name.to_string(),
+            })?;
 
-    let header_str = header_value
-        .to_str()
-        .map_err(|_| IpExtractionError::InvalidHeaderEncoding {
-            header_name: header_name.to_string(),
-        })?;
+    let header_str =
+        header_value
+            .to_str()
+            .map_err(|_| IpExtractionError::InvalidHeaderEncoding {
+                header_name: header_name.to_string(),
+            })?;
 
     let ips: Vec<&str> = header_str.split(',').map(|s| s.trim()).collect();
 
@@ -305,9 +303,11 @@ fn parse_forwarded_header(
     }
 
     // Client IP is always the leftmost
-    let client_ip_str = ips.first().ok_or_else(|| IpExtractionError::MissingHeader {
-        header_name: header_name.to_string(),
-    })?;
+    let client_ip_str = ips
+        .first()
+        .ok_or_else(|| IpExtractionError::MissingHeader {
+            header_name: header_name.to_string(),
+        })?;
 
     client_ip_str
         .parse()
@@ -349,7 +349,11 @@ mod tests {
     #[test]
     fn test_x_forwarded_for_single_ip() {
         let headers = make_headers(&[("x-forwarded-for", "1.2.3.4")]);
-        let ip = extract_client_ip(&IpExtractionStrategy::x_forwarded_for(1), &headers, SOCKET_IP);
+        let ip = extract_client_ip(
+            &IpExtractionStrategy::x_forwarded_for(1),
+            &headers,
+            SOCKET_IP,
+        );
         assert_eq!(ip.unwrap(), "1.2.3.4".parse::<IpAddr>().unwrap());
     }
 
@@ -357,10 +361,18 @@ mod tests {
     fn test_x_forwarded_for_depth_mismatch_rejected() {
         // Header has 2 IPs but proxy_depth is 1, should return error
         let headers = make_headers(&[("x-forwarded-for", "1.2.3.4, 5.6.7.8")]);
-        let result = extract_client_ip(&IpExtractionStrategy::x_forwarded_for(1), &headers, SOCKET_IP);
+        let result = extract_client_ip(
+            &IpExtractionStrategy::x_forwarded_for(1),
+            &headers,
+            SOCKET_IP,
+        );
         assert!(matches!(
             result,
-            Err(IpExtractionError::ProxyDepthMismatch { expected: 1, actual: 2, .. })
+            Err(IpExtractionError::ProxyDepthMismatch {
+                expected: 1,
+                actual: 2,
+                ..
+            })
         ));
     }
 
@@ -368,7 +380,11 @@ mod tests {
     fn test_x_forwarded_for_multiple_ips_with_correct_depth() {
         // Header has 3 IPs and proxy_depth is 3, should return leftmost
         let headers = make_headers(&[("x-forwarded-for", "1.2.3.4, 5.6.7.8, 9.10.11.12")]);
-        let ip = extract_client_ip(&IpExtractionStrategy::x_forwarded_for(3), &headers, SOCKET_IP);
+        let ip = extract_client_ip(
+            &IpExtractionStrategy::x_forwarded_for(3),
+            &headers,
+            SOCKET_IP,
+        );
         assert_eq!(ip.unwrap(), "1.2.3.4".parse::<IpAddr>().unwrap());
     }
 
@@ -407,15 +423,29 @@ mod tests {
     #[test]
     fn test_error_when_header_missing() {
         let headers = HeaderMap::new();
-        let result = extract_client_ip(&IpExtractionStrategy::x_forwarded_for(1), &headers, SOCKET_IP);
-        assert!(matches!(result, Err(IpExtractionError::MissingHeader { .. })));
+        let result = extract_client_ip(
+            &IpExtractionStrategy::x_forwarded_for(1),
+            &headers,
+            SOCKET_IP,
+        );
+        assert!(matches!(
+            result,
+            Err(IpExtractionError::MissingHeader { .. })
+        ));
     }
 
     #[test]
     fn test_error_when_ip_invalid() {
         let headers = make_headers(&[("x-forwarded-for", "not-an-ip")]);
-        let result = extract_client_ip(&IpExtractionStrategy::x_forwarded_for(1), &headers, SOCKET_IP);
-        assert!(matches!(result, Err(IpExtractionError::InvalidIpAddress { .. })));
+        let result = extract_client_ip(
+            &IpExtractionStrategy::x_forwarded_for(1),
+            &headers,
+            SOCKET_IP,
+        );
+        assert!(matches!(
+            result,
+            Err(IpExtractionError::InvalidIpAddress { .. })
+        ));
     }
 
     #[test]
