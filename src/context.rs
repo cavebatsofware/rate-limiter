@@ -234,7 +234,7 @@ fn process_security_context(
     let user_agent = headers
         .get("user-agent")
         .and_then(|h| h.to_str().ok())
-        .map(|s| sanitize_user_agent(s))
+        .map(sanitize_user_agent)
         .unwrap_or_default();
 
     tracing::debug!(

@@ -87,33 +87,31 @@ impl<B: OnBlocked + 'static> RateLimiter<B> {
             entry.tokens -= 1.0;
             let remaining_tokens = entry.tokens;
             (true, false, remaining_tokens)
+        } else if entry.blocked_until.is_none() {
+            let block_duration_chrono = chrono::Duration::from_std(self.config.block_duration)
+                .unwrap_or(chrono::Duration::minutes(15));
+            entry.blocked_until = Some(now + block_duration_chrono);
+
+            tracing::warn!(
+                "IP exceeded rate limit: {} (path: {}, tokens: {:.2})",
+                context.ip_address,
+                path,
+                entry.tokens
+            );
+
+            // Call on_blocked directly - spawn a task to avoid blocking the rate limit check
+            let on_blocked = self.on_blocked.clone();
+            let ip = context.ip_address.clone();
+            let path = path.to_string();
+            let context = context.clone();
+
+            tokio::spawn(async move {
+                on_blocked.on_blocked(&ip, &path, &context).await;
+            });
+
+            (false, true, 0.0)
         } else {
-            if entry.blocked_until.is_none() {
-                let block_duration_chrono = chrono::Duration::from_std(self.config.block_duration)
-                    .unwrap_or(chrono::Duration::minutes(15));
-                entry.blocked_until = Some(now + block_duration_chrono);
-
-                tracing::warn!(
-                    "IP exceeded rate limit: {} (path: {}, tokens: {:.2})",
-                    context.ip_address,
-                    path,
-                    entry.tokens
-                );
-
-                // Call on_blocked directly - spawn a task to avoid blocking the rate limit check
-                let on_blocked = self.on_blocked.clone();
-                let ip = context.ip_address.clone();
-                let path = path.to_string();
-                let context = context.clone();
-
-                tokio::spawn(async move {
-                    on_blocked.on_blocked(&ip, &path, &context).await;
-                });
-
-                (false, true, 0.0)
-            } else {
-                (false, false, 0.0)
-            }
+            (false, false, 0.0)
         }
     }
 

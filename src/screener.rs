@@ -17,21 +17,12 @@
 
 use regex::RegexSet;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ScreeningConfig {
     /// Regex patterns that match malicious paths
     pub path_patterns: Vec<String>,
     /// Regex patterns that match malicious user agents (case-insensitive)
     pub user_agent_patterns: Vec<String>,
-}
-
-impl Default for ScreeningConfig {
-    fn default() -> Self {
-        Self {
-            path_patterns: Vec::new(),
-            user_agent_patterns: Vec::new(),
-        }
-    }
 }
 
 impl ScreeningConfig {
