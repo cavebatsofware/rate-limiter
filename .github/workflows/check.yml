@@ -13,9 +13,9 @@ jobs:
     name: Check
     runs-on: ubuntu-latest
     steps:
-      - uses: hecrj/setup-rust-action@v2.0.1
+      - uses: hecrj/setup-rust-action@110f36749599534ca96628b82f52ae67e5d95a3c
         with:
           components: clippy
-      - uses: actions/checkout@v5.0.0
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
       - name: Check
         run: cargo check --all-targets --all-features
