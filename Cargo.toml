@@ -1,6 +1,6 @@
 [package]
 name = "basic-axum-rate-limit"
-version = "0.2.1"
+version = "0.2.2"
 edition = "2021"
 authors = ["Grant DeFayette"]
 license = "LGPL-3.0-or-later"
@@ -20,7 +20,7 @@ tracing = "0.1.41"
 async-trait = "0.1.89"
 regex = "1.12.2"
 tower = "0.5.2"
-prometheus = { version = "0.13", optional = true }
+prometheus = { version = "0.14", optional = true }
 lazy_static = { version = "1.5", optional = true }
 
 [dev-dependencies]
