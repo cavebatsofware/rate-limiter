@@ -1,0 +1,26 @@
+name: 🏭 Cargo Test
+
+on: [pull_request]
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        toolchain: [stable]
+    continue-on-error: true
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5.0.0
+
+      - name: Setup Rust
+        run: |
+          rustup toolchain add ${{ matrix.toolchain }}
+          rustup override set ${{ matrix.toolchain }}
+
+      - name: Run tests
+        run: |
+          cargo test --verbose
+          cargo test --verbose --all-features

@@ -1,0 +1,23 @@
+name: 💾 Cargo Format
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  release:
+    types: [created]
+
+jobs:
+  all:
+    name: Format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: hecrj/setup-rust-action@v2.0.1
+        with:
+          components: rustfmt
+      - uses: actions/checkout@v5.0.0
+      - name: Check format
+        run: cargo fmt --all -- --check --verbose

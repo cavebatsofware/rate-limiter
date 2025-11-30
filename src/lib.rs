@@ -29,7 +29,10 @@ pub mod metrics;
 pub mod routes;
 
 pub use config::RateLimitConfig;
-pub use context::security_context_middleware;
+pub use context::{
+    security_context_middleware, security_context_middleware_with_config, IpExtractionError,
+    IpExtractionStrategy, SecurityContextConfig,
+};
 pub use limiter::RateLimiter;
 pub use middleware::rate_limit_middleware;
 pub use screener::{RequestScreener, ScreeningConfig, ScreeningReason, ScreeningResult};
