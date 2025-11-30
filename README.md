@@ -112,7 +112,7 @@ let config = SecurityContextConfig::new()
 
 // Custom header
 let config = SecurityContextConfig::new()
-    .with_ip_extraction(IpExtractionStrategy::custom_header("X-Client-IP"));
+    .with_ip_extraction(IpExtractionStrategy::custom_header("X-Client-IP", 1));
 ```
 
 ### 5. Add middleware to router
