@@ -1,4 +1,5 @@
 name: 🔬 Cargo Check
+
 on:
   push:
     branches:
@@ -8,14 +9,18 @@ on:
       - main
   release:
     types: [created]
+
 jobs:
-  all:
+  check:
     name: Check
     runs-on: ubuntu-latest
+
     steps:
-      - uses: hecrj/setup-rust-action@110f36749599534ca96628b82f52ae67e5d95a3c
-        with:
-          components: clippy
-      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
       - name: Check
         run: cargo check --all-targets --all-features
