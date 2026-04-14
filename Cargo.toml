@@ -1,6 +1,6 @@
 [package]
 name = "basic-axum-rate-limit"
-version = "0.2.2"
+version = "0.2.3"
 edition = "2021"
 authors = ["Grant DeFayette"]
 license = "LGPL-3.0-or-later"
@@ -12,20 +12,21 @@ keywords = ["axum", "rate-limit", "middleware", "web"]
 categories = ["web-programming", "network-programming"]
 
 [dependencies]
-axum = "0.8.6"
+axum = "0.8.9"
 dashmap = "6.1.0"
-chrono = { version = "0.4.42", features = ["serde"] }
-tokio = { version = "1.48.0", features = ["sync", "time"] }
-tracing = "0.1.41"
+chrono = { version = "0.4.44", features = ["serde"] }
+tokio = { version = "1.52.0", features = ["sync", "time"] }
+tracing = "0.1.44"
 async-trait = "0.1.89"
-regex = "1.12.2"
-tower = "0.5.2"
+regex = "1.12.3"
+tower = "0.5.3"
 prometheus = { version = "0.14", optional = true }
 lazy_static = { version = "1.5", optional = true }
 
 [dev-dependencies]
-tokio = { version = "1.48.0", features = ["rt-multi-thread", "macros", "net"] }
-serde_json = "1.0"
+tokio = { version = "1.52.0", features = ["rt-multi-thread", "macros", "net"] }
+serde_json = "1.0.149"
+reqwest = { version = "0.13.2", default-features = true }
 
 [features]
 default = []
