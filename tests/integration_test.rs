@@ -8,6 +8,7 @@ use reqwest::StatusCode;
 use std::net::SocketAddr;
 use std::time::Duration;
 use tokio::sync::oneshot;
+use tokio::task::JoinHandle;
 
 async fn handler() -> &'static str {
     "OK"
@@ -16,11 +17,16 @@ async fn handler() -> &'static str {
 struct TestServer {
     base_url: String,
     shutdown_tx: oneshot::Sender<()>,
+    server_handle: JoinHandle<()>,
 }
 
 impl TestServer {
     async fn shutdown(self) {
         let _ = self.shutdown_tx.send(());
+        tokio::time::timeout(Duration::from_secs(5), self.server_handle)
+            .await
+            .expect("server did not shut down within 5 seconds")
+            .expect("server task panicked");
     }
 }
 
@@ -38,7 +44,7 @@ async fn spawn_test_server(rate_limiter: RateLimiter<NoOpOnBlocked>) -> TestServ
 
     let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
 
-    tokio::spawn(async move {
+    let server_handle = tokio::spawn(async move {
         axum::serve(
             listener,
             app.into_make_service_with_connect_info::<SocketAddr>(),
@@ -53,6 +59,7 @@ async fn spawn_test_server(rate_limiter: RateLimiter<NoOpOnBlocked>) -> TestServ
     TestServer {
         base_url: format!("http://{}", addr),
         shutdown_tx,
+        server_handle,
     }
 }
 
