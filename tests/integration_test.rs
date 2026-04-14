@@ -1,9 +1,10 @@
 use basic_axum_rate_limit::{
-    rate_limit_middleware, security_context_middleware, NoOpOnBlocked, RateLimitConfig, RateLimiter,
-    RequestScreener, ScreeningConfig,
+    rate_limit_middleware, security_context_middleware, NoOpOnBlocked, RateLimitConfig,
+    RateLimiter, RequestScreener, ScreeningConfig,
 };
 
 use axum::{routing::get, Router};
+use reqwest::StatusCode;
 use std::net::SocketAddr;
 use std::time::Duration;
 use tokio::sync::oneshot;
@@ -80,7 +81,7 @@ async fn test_basic_request_succeeds() {
     let client = reqwest::Client::new();
 
     let resp = get_with_ip(&client, &server.base_url, "/", "10.0.0.1").await;
-    assert_eq!(resp.status(), 200);
+    assert_eq!(resp.status(), StatusCode::OK);
 
     server.shutdown().await;
 }
@@ -92,11 +93,16 @@ async fn test_rate_limiting_returns_429() {
 
     for i in 1..=5 {
         let resp = get_with_ip(&client, &server.base_url, "/", "10.0.0.1").await;
-        assert_eq!(resp.status(), 200, "Request {} should succeed", i);
+        assert_eq!(
+            resp.status(),
+            StatusCode::OK,
+            "Request {} should succeed",
+            i
+        );
     }
 
     let resp = get_with_ip(&client, &server.base_url, "/", "10.0.0.1").await;
-    assert_eq!(resp.status(), 429);
+    assert_eq!(resp.status(), StatusCode::TOO_MANY_REQUESTS);
 
     server.shutdown().await;
 }
@@ -107,16 +113,26 @@ async fn test_blocked_ip_stays_blocked() {
     let client = reqwest::Client::new();
 
     // Exhaust tokens and trigger block
-    for _ in 1..=5 {
-        get_with_ip(&client, &server.base_url, "/", "10.0.0.2").await;
+    for i in 1..=5 {
+        let resp = get_with_ip(&client, &server.base_url, "/", "10.0.0.2").await;
+        assert_eq!(
+            resp.status(),
+            StatusCode::OK,
+            "Request {} should succeed",
+            i
+        );
     }
     let resp = get_with_ip(&client, &server.base_url, "/", "10.0.0.2").await;
-    assert_eq!(resp.status(), 429);
+    assert_eq!(resp.status(), StatusCode::TOO_MANY_REQUESTS);
 
     // Subsequent requests should also be blocked
     for _ in 0..3 {
         let resp = get_with_ip(&client, &server.base_url, "/", "10.0.0.2").await;
-        assert_eq!(resp.status(), 429, "Blocked IP should stay blocked");
+        assert_eq!(
+            resp.status(),
+            StatusCode::TOO_MANY_REQUESTS,
+            "Blocked IP should stay blocked"
+        );
     }
 
     server.shutdown().await;
@@ -128,15 +144,29 @@ async fn test_different_ips_independent() {
     let client = reqwest::Client::new();
 
     // Exhaust tokens for one IP
-    for _ in 1..=5 {
-        get_with_ip(&client, &server.base_url, "/", "10.0.0.10").await;
+    for i in 1..=5 {
+        let resp = get_with_ip(&client, &server.base_url, "/", "10.0.0.10").await;
+        assert_eq!(
+            resp.status(),
+            StatusCode::OK,
+            "Request {} should succeed",
+            i
+        );
     }
     let resp = get_with_ip(&client, &server.base_url, "/", "10.0.0.10").await;
-    assert_eq!(resp.status(), 429, "First IP should be blocked");
+    assert_eq!(
+        resp.status(),
+        StatusCode::TOO_MANY_REQUESTS,
+        "First IP should be blocked"
+    );
 
     // Different IP should still work
     let resp = get_with_ip(&client, &server.base_url, "/", "10.0.0.11").await;
-    assert_eq!(resp.status(), 200, "Second IP should not be affected");
+    assert_eq!(
+        resp.status(),
+        StatusCode::OK,
+        "Second IP should not be affected"
+    );
 
     server.shutdown().await;
 }
@@ -152,10 +182,10 @@ async fn test_screener_blocks_malicious_path() {
     let client = reqwest::Client::new();
 
     let resp = get_with_ip(&client, &server.base_url, "/test.php", "10.0.0.3").await;
-    assert_eq!(resp.status(), 418);
+    assert_eq!(resp.status(), StatusCode::IM_A_TEAPOT);
 
     let resp = get_with_ip(&client, &server.base_url, "/.git/config", "10.0.0.4").await;
-    assert_eq!(resp.status(), 418);
+    assert_eq!(resp.status(), StatusCode::IM_A_TEAPOT);
 
     server.shutdown().await;
 }
@@ -180,7 +210,7 @@ async fn test_screener_blocks_malicious_user_agent() {
         .send()
         .await
         .unwrap();
-    assert_eq!(resp.status(), 418);
+    assert_eq!(resp.status(), StatusCode::IM_A_TEAPOT);
 
     server.shutdown().await;
 }
@@ -188,8 +218,7 @@ async fn test_screener_blocks_malicious_user_agent() {
 #[tokio::test]
 async fn test_screener_block_also_blocks_ip() {
     let config = RateLimitConfig::new(50, Duration::from_secs(10)).with_grace_period(0);
-    let screening_config =
-        ScreeningConfig::new().with_path_patterns(vec![r"\.php$".to_string()]);
+    let screening_config = ScreeningConfig::new().with_path_patterns(vec![r"\.php$".to_string()]);
     let screener = RequestScreener::new(&screening_config).unwrap();
     let limiter = RateLimiter::new(config, NoOpOnBlocked).with_screener(screener);
     let server = spawn_test_server(limiter).await;
@@ -197,11 +226,11 @@ async fn test_screener_block_also_blocks_ip() {
 
     // Trigger screener block
     let resp = get_with_ip(&client, &server.base_url, "/evil.php", "10.0.0.20").await;
-    assert_eq!(resp.status(), 418);
+    assert_eq!(resp.status(), StatusCode::IM_A_TEAPOT);
 
     // Same IP, normal path -- should now be blocked because block_immediately was called
     let resp = get_with_ip(&client, &server.base_url, "/", "10.0.0.20").await;
-    assert_eq!(resp.status(), 429);
+    assert_eq!(resp.status(), StatusCode::TOO_MANY_REQUESTS);
 
     server.shutdown().await;
 }
