@@ -287,13 +287,15 @@ async fn test_auth_refund_callback_injected_and_fires() {
     // With auth_refund_ratio > 0, middleware injects AuthRefundCallback into
     // extensions. A handler that simulates require_authenticated calls it;
     // the IP gets a token refund, allowing more requests than the raw bucket.
-    use axum::{extract::connect_info::MockConnectInfo, middleware::from_fn_with_state, routing::get, Router};
-    use axum_test::TestServer;
     use crate::{
-        context::security_context_middleware,
-        middleware::rate_limit_middleware,
+        context::security_context_middleware, middleware::rate_limit_middleware,
         types::AuthRefundCallback,
     };
+    use axum::{
+        extract::connect_info::MockConnectInfo, middleware::from_fn_with_state, routing::get,
+        Router,
+    };
+    use axum_test::TestServer;
     use std::net::SocketAddr;
 
     let config = RateLimitConfig::new(10, Duration::from_secs(60))
@@ -322,7 +324,10 @@ async fn test_auth_refund_callback_injected_and_fires() {
     // With 0.5 refund per request, net cost is 0.5 tokens. A 10-token
     // bucket should allow at least 18 requests before exhaustion.
     for i in 1..=18 {
-        let resp = server.get("/").add_header("X-Forwarded-For", "10.9.9.1").await;
+        let resp = server
+            .get("/")
+            .add_header("X-Forwarded-For", "10.9.9.1")
+            .await;
         assert_eq!(
             resp.status_code(),
             axum::http::StatusCode::OK,
@@ -335,13 +340,15 @@ async fn test_auth_refund_callback_injected_and_fires() {
 #[tokio::test]
 async fn test_no_callback_without_auth_refund_ratio() {
     // With auth_refund_ratio == 0 (default), no AuthRefundCallback is injected.
-    use axum::{extract::connect_info::MockConnectInfo, middleware::from_fn_with_state, routing::get, Router};
-    use axum_test::TestServer;
     use crate::{
-        context::security_context_middleware,
-        middleware::rate_limit_middleware,
+        context::security_context_middleware, middleware::rate_limit_middleware,
         types::AuthRefundCallback,
     };
+    use axum::{
+        extract::connect_info::MockConnectInfo, middleware::from_fn_with_state, routing::get,
+        Router,
+    };
+    use axum_test::TestServer;
     use std::net::SocketAddr;
 
     let config = RateLimitConfig::new(10, Duration::from_secs(60)).with_grace_period(0);
@@ -365,7 +372,10 @@ async fn test_no_callback_without_auth_refund_ratio() {
 
     let server = TestServer::new(app);
 
-    let resp = server.get("/").add_header("X-Forwarded-For", "10.9.9.3").await;
+    let resp = server
+        .get("/")
+        .add_header("X-Forwarded-For", "10.9.9.3")
+        .await;
     assert_eq!(
         resp.status_code(),
         axum::http::StatusCode::OK,
