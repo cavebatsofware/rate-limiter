@@ -127,12 +127,10 @@ let app = Router::new()
         rate_limiter,
         rate_limit_middleware,
     ))
-    /* Your application middleware should be placed in between these layers.
-     * This allows the security_context_middleware to handle the post processing,
-     * refunding tokens, or docking extra tokens after requests have been handled.
-     */
     .layer(axum::middleware::from_fn(security_context_middleware));
 ```
+
+`security_context_middleware` must be the outermost layer so it runs first and populates `SecurityContext` before `rate_limit_middleware` reads it. In Axum, the last `.layer()` call is outermost, so this ordering is correct.
 
 For custom IP extraction strategies, use `security_context_middleware_with_config`:
 
@@ -151,7 +149,71 @@ let security_config = SecurityContextConfig::new()
 ));
 ```
 
-### 6. Access security context in handlers
+### 6. Reward authenticated requests (optional)
+
+Authenticated users are far less likely to be bots. The auth refund callback lets you give them a lower effective token cost without any extra session lookups or database queries in the middleware itself.
+
+**Configure the refund ratio:**
+
+```rust
+let config = RateLimitConfig::new(30, Duration::from_secs(15 * 60))
+    .with_auth_refund_ratio(0.5); // refund 50% of the token cost on success
+```
+
+**Wire up your auth middleware:**
+
+When `auth_refund_ratio > 0`, `rate_limit_middleware` injects an `AuthRefundCallback` into request extensions. Your authentication middleware extracts it and calls it after confirming the request is authenticated:
+
+```rust
+use basic_axum_rate_limit::AuthRefundCallback;
+use axum::{middleware::Next, response::Response, http::Request};
+
+pub async fn require_authenticated(
+    request: Request<axum::body::Body>,
+    next: Next,
+) -> Response {
+    // Extract the callback before consuming the request.
+    let refund_callback = request.extensions().get::<AuthRefundCallback>().cloned();
+
+    // Your normal authentication check goes here.
+    // If authentication fails, return early without calling the callback.
+
+    let response = next.run(request).await;
+
+    // Call the callback only on success so unauthenticated requests don't get a discount.
+    if response.status().is_success() {
+        if let Some(cb) = refund_callback {
+            (cb.0)();
+        }
+    }
+
+    response
+}
+```
+
+**Place your auth middleware between the two rate limit layers:**
+
+```rust
+let app = Router::new()
+    .route("/api/endpoint", post(handler))
+    .layer(axum::middleware::from_fn(require_authenticated)) // runs after rate_limit_middleware injects the callback
+    .layer(axum::middleware::from_fn_with_state(rate_limiter, rate_limit_middleware))
+    .layer(axum::middleware::from_fn(security_context_middleware));
+```
+
+**Effective token costs with `auth_refund_ratio = 0.5`:**
+
+```
+Unauthenticated request: 1.0 token
+Authenticated request:   0.5 tokens (refund applied)
+Cache hit (304):         0.5 tokens (cache refund applied; auth refund does not stack)
+```
+
+The auth and cache refunds never stack: if the auth callback fires, the middleware skips the 304 cache refund for that request. This is enforced structurally, not by convention, so it holds regardless of what your inner middleware does.
+
+If `auth_refund_ratio` is `0.0` (the default), no callback is injected and there is no overhead.
+
+### 7. Access security context in handlers
 
 ```rust
 use axum::Extension;
@@ -190,7 +252,8 @@ let config = RateLimitConfig::new(
     Duration::from_secs(15 * 60),    // Block duration when limit exceeded
 )
 .with_grace_period(1)                // Grace period in seconds (default: 1)
-.with_cache_refund_ratio(0.5)        // Refund 90% for cache hits (default: 0.5)
+.with_cache_refund_ratio(0.5)        // Refund ratio for 304 responses (default: 0.5)
+.with_auth_refund_ratio(0.5)         // Refund ratio for authenticated requests (default: 0.0)
 .with_error_penalty(2.0);            // Extra tokens for errors (default: 2.0)
 ```
 
@@ -199,6 +262,7 @@ Defaults:
 - `block_duration`: 15 minutes (900 seconds)
 - `grace_period_seconds`: 1
 - `cache_refund_ratio`: 0.5 (50% refund for 304 responses)
+- `auth_refund_ratio`: 0.0 (disabled; no callback injected)
 - `error_penalty_tokens`: 2.0 (additional token cost for 4xx/5xx)
 
 ### Configuration Methods
@@ -207,19 +271,22 @@ Defaults:
 impl RateLimitConfig {
     // Create with custom rate limit and block duration
     pub fn new(rate_limit_per_minute: u32, block_duration: Duration) -> Self;
-    
+
     // Set grace period in seconds
     pub fn with_grace_period(self, seconds: u64) -> Self;
-    
-    // Set cache refund ratio (0.0 to 1.0)
+
+    // Set cache refund ratio (0.0 to 1.0); applied on 304 responses
     pub fn with_cache_refund_ratio(self, ratio: f64) -> Self;
-    
+
+    // Set auth refund ratio (0.0 to 1.0); applied when AuthRefundCallback is called
+    pub fn with_auth_refund_ratio(self, ratio: f64) -> Self;
+
     // Set error penalty in tokens (>= 0.0)
     pub fn with_error_penalty(self, penalty: f64) -> Self;
-    
+
     // Get maximum tokens (equals rate_limit_per_minute)
     pub fn max_tokens(&self) -> f64;
-    
+
     // Get token refill rate per second
     pub fn refill_rate_per_second(&self) -> f64;
 }
@@ -235,6 +302,15 @@ pub struct SecurityContext {
     pub user_agent: String,
 }
 ```
+
+### AuthRefundCallback
+
+```rust
+#[derive(Clone)]
+pub struct AuthRefundCallback(pub Arc<dyn Fn() + Send + Sync>);
+```
+
+Injected into request extensions by `rate_limit_middleware` when `auth_refund_ratio > 0`. Extract it in your authentication middleware and call it after confirming the request is authenticated. Calling this sets an internal flag that prevents the 304 cache refund from also firing, so the two refunds cannot stack.
 
 ### OnBlocked
 
@@ -272,6 +348,25 @@ The token bucket algorithm naturally allows bursts:
 - After grace period, tokens refill at 0.5/second (30/minute)
 - Example: Use all 30 tokens → wait 60 seconds → have 30 tokens again
 
+### Authenticated Request Discounts
+
+Authenticated users are less likely to be bots or scanners. Giving them a lower effective token cost extends the useful capacity of your bucket for legitimate traffic without weakening protection against unauthenticated abuse.
+
+**How it works:**
+1. Request arrives → consumes 1.0 token upfront
+2. `rate_limit_middleware` injects `AuthRefundCallback` into request extensions
+3. Your auth middleware confirms the request is authenticated and calls the callback
+4. Middleware refunds the configured fraction of the token cost
+5. **Effective cost: `1.0 - auth_refund_ratio` tokens**
+
+**Example with `auth_refund_ratio = 0.5` and a 30-token bucket:**
+```
+Unauthenticated requests: 30 requests/minute (1.0 token each)
+Authenticated requests:   60 requests/minute (0.5 token effective cost)
+```
+
+The auth and cache refunds are mutually exclusive: if the auth callback fires for a request, the 304 cache refund branch is skipped. This is structurally enforced by the middleware, not a caller convention.
+
 ### Cache Response Handling
 
 HTTP cache validation requests (304 Not Modified) consume reduced tokens:
@@ -280,17 +375,16 @@ HTTP cache validation requests (304 Not Modified) consume reduced tokens:
 1. Request arrives → consumes 1.0 token upfront
 2. Handler executes and returns response
 3. Middleware checks response status code
-4. If `304 Not Modified` → refunds 0.5 tokens (default)
-5. **Effective cost: 0.1 tokens** (10x more cache requests allowed)
-6. Prevents abuse from spoofed `If-None-Match` headers
+4. If `304 Not Modified` and the auth callback did not fire → refunds the configured ratio
+5. **Effective cost: `1.0 - cache_refund_ratio` tokens**
 
-**Example:**
+**Example with `cache_refund_ratio = 0.5`:**
 ```
 Full requests:  30 requests/minute (1.0 token each)
 Cache requests: 60 requests/minute (0.5 token effective cost)
 ```
 
-This naturally handles browser cache validation without creating security holes.
+This naturally handles browser cache validation without creating security holes from spoofed `If-None-Match` headers.
 
 ### Error Response Penalties
 
@@ -300,24 +394,24 @@ Failed requests (4xx and 5xx status codes) consume additional tokens to penalize
 1. Request arrives → consumes 1.0 token upfront
 2. Handler executes and returns response
 3. Middleware checks response status code
-4. If `4xx` or `5xx` → consumes 1.0 additional token (default)
-5. **Effective cost: 2.0 tokens** (2x normal cost)
+4. If `4xx` or `5xx` → consumes additional tokens (default: 1.0)
+5. **Effective cost: `1.0 + error_penalty_tokens` tokens**
 
 **Why this helps:**
 - **Legitimate users**: Rarely hit errors
-- **Scanners/bots**: Generate many 404s during path enumeration, get rate limited 2x faster
-- **Server errors**: Also penalized, creating visibility into problems. If a user is generating lots of 500s that is something I'd like to shutdown. A better strategy for handling the block/backoff would be good for some cases but that isn't a concern for my application so I didn't worry about it.
+- **Scanners/bots**: Generate many 404s during path enumeration, get rate limited faster
+- **Server errors**: Also penalized, creating visibility into problems
 
 **Example token costs:**
 ```
 200 OK:           1.0 token
-304 Not Modified: 0.5 token (with refund)
+304 Not Modified: 0.5 token (with default cache refund)
 404 Not Found:    2.0 tokens (1.0 + 1.0 penalty)
 403 Forbidden:    2.0 tokens (1.0 + 1.0 penalty)
 500 Server Error: 2.0 tokens (1.0 + 1.0 penalty)
 ```
 
-**Impact with 50 token bucket:**
+**Impact with 50-token bucket:**
 ```
 Legitimate traffic (mostly 2xx):  ~50 requests/min
 Scanner (all 404s):                25 requests/min (50 tokens / 2.0 cost)
@@ -357,15 +451,15 @@ impl ScreeningConfig {
 
 ### Metrics Feature
 
-The metrics feature enables the metrics endpoint and the metrics logging methods. These are used for load testing with prometheus logging outside
-of production environments. They probably could be used in production environments but you would want to secure the endpoint or change the implementation to use a flat file for metrics rather than an api endpoint. The Cargo.toml looks like this for my setup.
+The metrics feature enables the metrics endpoint and the metrics logging methods. These are used for load testing with prometheus logging outside of production environments. They probably could be used in production environments but you would want to secure the endpoint or change the implementation to use a flat file for metrics rather than an api endpoint. The Cargo.toml looks like this for my setup.
+
 ```toml
 [features]
 default = []
 loadtest = ["basic-axum-rate-limit/metrics"]
 
 [dependencies]
-basic-axum-rate-limit = "0.2.1"
+basic-axum-rate-limit = "0.3.0"
 ```
 
 ### Example Configuration

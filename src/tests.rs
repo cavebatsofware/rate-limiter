@@ -393,8 +393,8 @@ async fn test_auth_refund_blocks_cache_refund_on_304() {
         types::AuthRefundCallback,
     };
     use axum::{
-        extract::connect_info::MockConnectInfo, http::StatusCode,
-        middleware::from_fn_with_state, routing::get, Router,
+        extract::connect_info::MockConnectInfo, http::StatusCode, middleware::from_fn_with_state,
+        routing::get, Router,
     };
     use axum_test::TestServer;
     use std::net::SocketAddr;
