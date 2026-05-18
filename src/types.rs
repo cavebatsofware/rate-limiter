@@ -16,6 +16,7 @@
  */
 
 use chrono::{DateTime, Utc};
+use std::sync::Arc;
 
 #[derive(Debug, Clone)]
 pub struct RateLimitEntry {
@@ -66,6 +67,15 @@ pub trait ActionChecker: Send + Sync {
         within: std::time::Duration,
     ) -> Result<bool, Box<dyn std::error::Error + Send + Sync>>;
 }
+
+/// Injected into request extensions by `rate_limit_middleware` when
+/// `auth_refund_ratio > 0`. An inner authentication middleware (e.g.
+/// `require_authenticated`) extracts this and calls it after the request
+/// succeeds to refund the configured token fraction for the authenticated IP.
+/// Calling this sets a flag in the outer middleware that prevents the 304
+/// cache refund from also firing, so the two refunds cannot stack.
+#[derive(Clone)]
+pub struct AuthRefundCallback(pub Arc<dyn Fn() + Send + Sync>);
 
 pub struct NoOpOnBlocked;
 

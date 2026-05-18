@@ -17,13 +17,17 @@
 
 use crate::{
     limiter::RateLimiter,
-    types::{OnBlocked, SecurityContext},
+    types::{AuthRefundCallback, OnBlocked, SecurityContext},
 };
 use axum::{
     extract::State,
     http::{Request, StatusCode},
     middleware::Next,
     response::{IntoResponse, Response},
+};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
 };
 #[cfg(feature = "metrics")]
 use std::time::Instant;
@@ -107,11 +111,26 @@ pub async fn rate_limit_middleware<B: OnBlocked + 'static>(
         }
     }
 
+    let auth_refund_ratio = limiter.config().auth_refund_ratio;
+    let auth_refund_fired = Arc::new(AtomicBool::new(false));
+    if auth_refund_ratio > 0.0 {
+        let limiter_for_refund = limiter.clone();
+        let key_for_refund = rate_limit_key.clone();
+        let fired = auth_refund_fired.clone();
+        request
+            .extensions_mut()
+            .insert(AuthRefundCallback(Arc::new(move || {
+                if !fired.swap(true, Ordering::Relaxed) {
+                    limiter_for_refund.refund_tokens(&key_for_refund, auth_refund_ratio);
+                }
+            })));
+    }
+
     let response = next.run(request).await;
 
     let status = response.status();
 
-    if status == StatusCode::NOT_MODIFIED {
+    if status == StatusCode::NOT_MODIFIED && !auth_refund_fired.load(Ordering::Relaxed) {
         let refund_amount = limiter.config().cache_refund_ratio;
         limiter.refund_tokens(&rate_limit_key, refund_amount);
         #[cfg(feature = "metrics")]
