@@ -36,7 +36,9 @@ pub use context::{
 pub use limiter::RateLimiter;
 pub use middleware::rate_limit_middleware;
 pub use screener::{RequestScreener, ScreeningConfig, ScreeningReason, ScreeningResult};
-pub use types::{ActionChecker, NoOpActionChecker, NoOpOnBlocked, OnBlocked, SecurityContext};
+pub use types::{
+    ActionChecker, AuthRefundCallback, NoOpActionChecker, NoOpOnBlocked, OnBlocked, SecurityContext,
+};
 
 #[cfg(feature = "metrics")]
 pub use routes::metrics_handler;

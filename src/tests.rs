@@ -266,3 +266,109 @@ async fn test_error_penalty_config() {
     let config3 = RateLimitConfig::new(10, Duration::from_secs(60)).with_error_penalty(-1.0); // Should clamp to 0.0
     assert_eq!(config3.error_penalty_tokens, 0.0);
 }
+
+#[tokio::test]
+async fn test_auth_refund_ratio_config() {
+    let config = RateLimitConfig::new(10, Duration::from_secs(60)).with_auth_refund_ratio(0.5);
+    assert_eq!(config.auth_refund_ratio, 0.5);
+
+    let config2 = RateLimitConfig::new(10, Duration::from_secs(60)).with_auth_refund_ratio(1.5);
+    assert_eq!(config2.auth_refund_ratio, 1.0, "should clamp to 1.0");
+
+    let config3 = RateLimitConfig::new(10, Duration::from_secs(60)).with_auth_refund_ratio(-0.1);
+    assert_eq!(config3.auth_refund_ratio, 0.0, "should clamp to 0.0");
+
+    let default = RateLimitConfig::default();
+    assert_eq!(default.auth_refund_ratio, 0.0, "default should be 0.0");
+}
+
+#[tokio::test]
+async fn test_auth_refund_callback_injected_and_fires() {
+    // With auth_refund_ratio > 0, middleware injects AuthRefundCallback into
+    // extensions. A handler that simulates require_authenticated calls it;
+    // the IP gets a token refund, allowing more requests than the raw bucket.
+    use axum::{extract::connect_info::MockConnectInfo, middleware::from_fn_with_state, routing::get, Router};
+    use axum_test::TestServer;
+    use crate::{
+        context::security_context_middleware,
+        middleware::rate_limit_middleware,
+        types::AuthRefundCallback,
+    };
+    use std::net::SocketAddr;
+
+    let config = RateLimitConfig::new(10, Duration::from_secs(60))
+        .with_grace_period(0)
+        .with_auth_refund_ratio(0.5);
+    let limiter = RateLimiter::new(config, NoOpOnBlocked);
+
+    let socket_addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
+    let app = Router::new()
+        .route(
+            "/",
+            get(|request: axum::extract::Request| async move {
+                // Simulate require_authenticated calling the callback on success
+                if let Some(cb) = request.extensions().get::<AuthRefundCallback>() {
+                    (cb.0)();
+                }
+                "OK"
+            }),
+        )
+        .layer(from_fn_with_state(limiter, rate_limit_middleware))
+        .layer(axum::middleware::from_fn(security_context_middleware))
+        .layer(MockConnectInfo(socket_addr));
+
+    let server = TestServer::new(app);
+
+    // With 0.5 refund per request, net cost is 0.5 tokens. A 10-token
+    // bucket should allow at least 18 requests before exhaustion.
+    for i in 1..=18 {
+        let resp = server.get("/").add_header("X-Forwarded-For", "10.9.9.1").await;
+        assert_eq!(
+            resp.status_code(),
+            axum::http::StatusCode::OK,
+            "request {} should succeed with auth refund active",
+            i
+        );
+    }
+}
+
+#[tokio::test]
+async fn test_no_callback_without_auth_refund_ratio() {
+    // With auth_refund_ratio == 0 (default), no AuthRefundCallback is injected.
+    use axum::{extract::connect_info::MockConnectInfo, middleware::from_fn_with_state, routing::get, Router};
+    use axum_test::TestServer;
+    use crate::{
+        context::security_context_middleware,
+        middleware::rate_limit_middleware,
+        types::AuthRefundCallback,
+    };
+    use std::net::SocketAddr;
+
+    let config = RateLimitConfig::new(10, Duration::from_secs(60)).with_grace_period(0);
+    let limiter = RateLimiter::new(config, NoOpOnBlocked);
+
+    let socket_addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
+    let app = Router::new()
+        .route(
+            "/",
+            get(|request: axum::extract::Request| async move {
+                if request.extensions().get::<AuthRefundCallback>().is_some() {
+                    axum::http::StatusCode::IM_A_TEAPOT
+                } else {
+                    axum::http::StatusCode::OK
+                }
+            }),
+        )
+        .layer(from_fn_with_state(limiter, rate_limit_middleware))
+        .layer(axum::middleware::from_fn(security_context_middleware))
+        .layer(MockConnectInfo(socket_addr));
+
+    let server = TestServer::new(app);
+
+    let resp = server.get("/").add_header("X-Forwarded-For", "10.9.9.3").await;
+    assert_eq!(
+        resp.status_code(),
+        axum::http::StatusCode::OK,
+        "no callback should be injected when auth_refund_ratio is 0"
+    );
+}

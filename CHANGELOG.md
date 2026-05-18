@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.4] - 2026-05-17
+
+### Added
+
+- `AuthRefundCallback`: a `Clone`-able closure wrapper injected into request extensions by `rate_limit_middleware` when `auth_refund_ratio > 0`. Inner authentication middleware (e.g. `require_authenticated`) extracts and calls it on successful responses to refund the configured token fraction for the IP. This avoids any extra session or database queries: the refund fires only on routes that already load and verify the session.
+- `RateLimitConfig::with_auth_refund_ratio(f64)` builder method (clamped 0.0-1.0, default `0.0`).
+
 ## [0.2.2] - 2025-11-29
 
 ### Fixed

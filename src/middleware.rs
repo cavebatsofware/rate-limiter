@@ -17,8 +17,9 @@
 
 use crate::{
     limiter::RateLimiter,
-    types::{OnBlocked, SecurityContext},
+    types::{AuthRefundCallback, OnBlocked, SecurityContext},
 };
+use std::sync::Arc;
 use axum::{
     extract::State,
     http::{Request, StatusCode},
@@ -105,6 +106,15 @@ pub async fn rate_limit_middleware<B: OnBlocked + 'static>(
 
             return IM_A_TEAPOT.into_response();
         }
+    }
+
+    let auth_refund_ratio = limiter.config().auth_refund_ratio;
+    if auth_refund_ratio > 0.0 {
+        let limiter_for_refund = limiter.clone();
+        let key_for_refund = rate_limit_key.clone();
+        request.extensions_mut().insert(AuthRefundCallback(Arc::new(move || {
+            limiter_for_refund.refund_tokens(&key_for_refund, auth_refund_ratio);
+        })));
     }
 
     let response = next.run(request).await;

@@ -23,6 +23,7 @@ pub struct RateLimitConfig {
     pub block_duration: Duration,
     pub grace_period_seconds: u64,
     pub cache_refund_ratio: f64,
+    pub auth_refund_ratio: f64,
     pub error_penalty_tokens: f64,
 }
 
@@ -33,6 +34,7 @@ impl Default for RateLimitConfig {
             block_duration: Duration::from_secs(15 * 60),
             grace_period_seconds: 1,
             cache_refund_ratio: 0.5,
+            auth_refund_ratio: 0.0,
             error_penalty_tokens: 2.0,
         }
     }
@@ -54,6 +56,11 @@ impl RateLimitConfig {
 
     pub fn with_cache_refund_ratio(mut self, ratio: f64) -> Self {
         self.cache_refund_ratio = ratio.clamp(0.0, 1.0);
+        self
+    }
+
+    pub fn with_auth_refund_ratio(mut self, ratio: f64) -> Self {
+        self.auth_refund_ratio = ratio.clamp(0.0, 1.0);
         self
     }
 
