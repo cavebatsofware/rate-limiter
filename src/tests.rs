@@ -382,3 +382,62 @@ async fn test_no_callback_without_auth_refund_ratio() {
         "no callback should be injected when auth_refund_ratio is 0"
     );
 }
+
+#[tokio::test]
+async fn test_auth_refund_blocks_cache_refund_on_304() {
+    // If the auth callback fires, the 304 cache refund must be skipped.
+    // Without the flag guard, both refunds would stack and a request could
+    // yield a net token gain, allowing unlimited requests.
+    use crate::{
+        context::security_context_middleware, middleware::rate_limit_middleware,
+        types::AuthRefundCallback,
+    };
+    use axum::{
+        extract::connect_info::MockConnectInfo, http::StatusCode,
+        middleware::from_fn_with_state, routing::get, Router,
+    };
+    use axum_test::TestServer;
+    use std::net::SocketAddr;
+
+    // auth_refund_ratio = 0.5, cache_refund_ratio = 1.0
+    // If both stack: net cost = 1 - 0.5 - 1.0 < 0 (unlimited requests)
+    // If only auth fires: net cost = 0.5 tokens, 10-token bucket exhausts after 20 requests
+    let config = RateLimitConfig::new(10, Duration::from_secs(60))
+        .with_grace_period(0)
+        .with_auth_refund_ratio(0.5)
+        .with_cache_refund_ratio(1.0);
+    let limiter = RateLimiter::new(config, NoOpOnBlocked);
+
+    let socket_addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
+    let app = Router::new()
+        .route(
+            "/",
+            get(|request: axum::extract::Request| async move {
+                if let Some(cb) = request.extensions().get::<AuthRefundCallback>() {
+                    (cb.0)();
+                }
+                StatusCode::NOT_MODIFIED
+            }),
+        )
+        .layer(from_fn_with_state(limiter, rate_limit_middleware))
+        .layer(axum::middleware::from_fn(security_context_middleware))
+        .layer(MockConnectInfo(socket_addr));
+
+    let server = TestServer::new(app);
+
+    let mut got_limited = false;
+    for _ in 0..25 {
+        let resp = server
+            .get("/")
+            .add_header("X-Forwarded-For", "10.9.9.4")
+            .await;
+        if resp.status_code() == StatusCode::TOO_MANY_REQUESTS {
+            got_limited = true;
+            break;
+        }
+    }
+    assert!(
+        got_limited,
+        "rate limit was never hit: auth and cache refunds are stacking"
+    );
+}

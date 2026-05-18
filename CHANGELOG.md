@@ -5,12 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.2.4] - 2026-05-17
+## [0.3.0] - 2026-05-17
 
 ### Added
 
-- `AuthRefundCallback`: a `Clone`-able closure wrapper injected into request extensions by `rate_limit_middleware` when `auth_refund_ratio > 0`. Inner authentication middleware (e.g. `require_authenticated`) extracts and calls it on successful non-304 responses to refund the configured token fraction for the IP. Auth and cache refunds are mutually exclusive by design: a 304 response uses the cache refund path in `rate_limit_middleware`; a success response uses the auth refund path via the callback. The two never stack, so no request can produce a net token gain.
+- `AuthRefundCallback`: a `Clone`-able closure wrapper injected into request extensions by `rate_limit_middleware` when `auth_refund_ratio > 0`. Inner authentication middleware (e.g. `require_authenticated`) extracts and calls it on successful responses to refund the configured token fraction for the IP.
 - `RateLimitConfig::with_auth_refund_ratio(f64)` builder method (clamped 0.0-1.0, default `0.0`).
+
+### Changed
+
+- Auth and cache refunds are now structurally mutually exclusive: calling `AuthRefundCallback` sets an internal flag that prevents the 304 cache refund from also applying in `rate_limit_middleware`, so the two paths cannot stack regardless of inner middleware behavior.
+
+## [0.2.3] - 2026-01-15
+
+### Added
+
+- Integration test suite (`tests/integration_test.rs`) covering basic success, rate limiting, IP blocking, independent IPs, and screener-based blocking for malicious paths and user agents.
+
+### Changed
+
+- Updated CI workflows (`audit.yml`, `check.yml`, `format.yml`, `lint.yml`, `test.yml`) to use `actions/checkout@v4` and `dtolnay/rust-toolchain@stable`; replaced deprecated `hecrj/setup-rust-action` and old pinned SHAs.
+- Dependency audit workflow now uses `rustsec/audit-check` instead of bare `cargo audit`.
+- Updated `axum`, `tokio`, `chrono`, `tracing`, `regex`, `tower`, and `serde_json` to latest versions; added `reqwest` as a dev-dependency for integration testing.
 
 ## [0.2.2] - 2025-11-29
 
