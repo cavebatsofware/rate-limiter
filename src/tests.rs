@@ -441,3 +441,67 @@ async fn test_auth_refund_blocks_cache_refund_on_304() {
         "rate limit was never hit: auth and cache refunds are stacking"
     );
 }
+
+#[tokio::test]
+async fn test_auth_refund_callback_idempotent() {
+    // The callback is Fn + Clone, so inner middleware could call it more than
+    // once. Only the first invocation should refund tokens; subsequent calls
+    // must be no-ops. Two ratios are tested so the assertion is meaningful
+    // regardless of which call "wins": with 0.6 the net cost is 0.4
+    // tokens/request (bucket exhausts within 26 requests); with 0.4 the net
+    // cost is 0.6 tokens/request (bucket exhausts within 18 requests). If
+    // the second call also refunded, the net costs would be -0.2 and 0.2
+    // respectively and the bucket would never (or far more slowly) exhaust.
+    use crate::{
+        context::security_context_middleware, middleware::rate_limit_middleware,
+        types::AuthRefundCallback,
+    };
+    use axum::{
+        extract::connect_info::MockConnectInfo, http::StatusCode, middleware::from_fn_with_state,
+        routing::get, Router,
+    };
+    use axum_test::TestServer;
+    use std::net::SocketAddr;
+
+    let socket_addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
+
+    for (ratio, ip, limit) in [
+        (0.6_f64, "10.9.9.5", 30_usize),
+        (0.4_f64, "10.9.9.6", 22_usize),
+    ] {
+        let config = RateLimitConfig::new(10, Duration::from_secs(60))
+            .with_grace_period(0)
+            .with_auth_refund_ratio(ratio);
+        let limiter = RateLimiter::new(config, NoOpOnBlocked);
+
+        let app = Router::new()
+            .route(
+                "/",
+                get(|request: axum::extract::Request| async move {
+                    if let Some(cb) = request.extensions().get::<AuthRefundCallback>() {
+                        (cb.0)();
+                        (cb.0)(); // second call must be a no-op
+                    }
+                    "OK"
+                }),
+            )
+            .layer(from_fn_with_state(limiter, rate_limit_middleware))
+            .layer(axum::middleware::from_fn(security_context_middleware))
+            .layer(MockConnectInfo(socket_addr));
+
+        let server = TestServer::new(app);
+
+        let mut got_limited = false;
+        for _ in 0..limit {
+            let resp = server.get("/").add_header("X-Forwarded-For", ip).await;
+            if resp.status_code() == StatusCode::TOO_MANY_REQUESTS {
+                got_limited = true;
+                break;
+            }
+        }
+        assert!(
+            got_limited,
+            "ratio {ratio}: rate limit not hit within {limit} requests; callback is not idempotent"
+        );
+    }
+}

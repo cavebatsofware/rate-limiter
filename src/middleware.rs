@@ -120,8 +120,9 @@ pub async fn rate_limit_middleware<B: OnBlocked + 'static>(
         request
             .extensions_mut()
             .insert(AuthRefundCallback(Arc::new(move || {
-                limiter_for_refund.refund_tokens(&key_for_refund, auth_refund_ratio);
-                fired.store(true, Ordering::Relaxed);
+                if !fired.swap(true, Ordering::Relaxed) {
+                    limiter_for_refund.refund_tokens(&key_for_refund, auth_refund_ratio);
+                }
             })));
     }
 
